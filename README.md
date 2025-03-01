@@ -1033,3 +1033,505 @@ volumes:
 ```python
 # Consultas N+1
 # Problema:
+artigos = Artigo.objects.all()
+for artigo in artigos:
+    print(artigo.autor.username)  # Gera uma consulta para cada artigo
+
+# Solução:
+artigos = Artigo.objects.select_related('autor').all()
+for artigo in artigos:
+    print(artigo.autor.username)  # Usa dados já carregados
+```
+
+```python
+# Para relações ManyToMany
+# Problema:
+artigos = Artigo.objects.all()
+for artigo in artigos:
+    print([c.nome for c in artigo.categorias.all()])  # Consulta para cada artigo
+
+# Solução:
+artigos = Artigo.objects.prefetch_related('categorias').all()
+for artigo in artigos:
+    print([c.nome for c in artigo.categorias.all()])  # Usa dados já carregados
+```
+
+### Indexação de Banco de Dados
+
+```python
+class Artigo(models.Model):
+    titulo = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    data_publicacao = models.DateTimeField(auto_now_add=True, db_index=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['titulo']),
+            models.Index(fields=['data_publicacao', 'titulo']),
+        ]
+```
+
+### Caching
+
+```python
+# settings.py
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+    }
+}
+
+# Cache de visão
+from django.views.decorators.cache import cache_page
+
+@cache_page(60 * 15)  # Cache por 15 minutos
+def lista_artigos(request):
+    artigos = Artigo.objects.all()
+    return render(request, 'app/lista_artigos.html', {'artigos': artigos})
+
+# Cache de template
+{% load cache %}
+{% cache 500 artigo_sidebar %}
+    {# Conteúdo que será cacheado #}
+{% endcache %}
+
+# Cache de consulta
+from django.core.cache import cache
+
+def get_artigos_populares():
+    cache_key = 'artigos_populares'
+    artigos = cache.get(cache_key)
+    if not artigos:
+        artigos = Artigo.objects.filter(popular=True)[:10]
+        cache.set(cache_key, artigos, 60 * 60)  # Cache por 1 hora
+    return artigos
+```
+
+### Otimização de Arquivos Estáticos
+
+```python
+# settings.py
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
+```
+
+```bash
+# Coletar arquivos estáticos
+python manage.py collectstatic
+
+# Compressão de arquivos estáticos
+pip install django-compressor
+
+# settings.py
+INSTALLED_APPS = [
+    # ...
+    'compressor',
+]
+
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+    'compressor.finders.CompressorFinder',
+]
+
+COMPRESS_ENABLED = True
+COMPRESS_CSS_FILTERS = ['compressor.filters.css_default.CssAbsoluteFilter', 'compressor.filters.cssmin.CSSMinFilter']
+COMPRESS_JS_FILTERS = ['compressor.filters.jsmin.JSMinFilter']
+```
+
+```html
+{% load compress %}
+
+{% compress css %}
+<link rel="stylesheet" href="{% static 'css/style.css' %}">
+<link rel="stylesheet" href="{% static 'css/responsive.css' %}">
+{% endcompress %}
+
+{% compress js %}
+<script src="{% static 'js/main.js' %}"></script>
+<script src="{% static 'js/analytics.js' %}"></script>
+{% endcompress %}
+```
+
+### Paginação
+
+```python
+from django.core.paginator import Paginator
+
+def lista_artigos(request):
+    artigos_lista = Artigo.objects.all()
+    paginator = Paginator(artigos_lista, 10)  # 10 artigos por página
+    
+    page = request.GET.get('page')
+    artigos = paginator.get_page(page)
+    
+    return render(request, 'app/lista_artigos.html', {'artigos': artigos})
+```
+
+```html
+<div class="pagination">
+    <span class="step-links">
+        {% if artigos.has_previous %}
+            <a href="?page=1">&laquo; primeira</a>
+            <a href="?page={{ artigos.previous_page_number }}">anterior</a>
+        {% endif %}
+
+        <span class="current">
+            Página {{ artigos.number }} de {{ artigos.paginator.num_pages }}.
+        </span>
+
+        {% if artigos.has_next %}
+            <a href="?page={{ artigos.next_page_number }}">próxima</a>
+            <a href="?page={{ artigos.paginator.num_pages }}">última &raquo;</a>
+        {% endif %}
+    </span>
+</div>
+```
+
+### Monitoramento de Performance
+
+```python
+# Instalação
+pip install django-debug-toolbar
+
+# settings.py
+INSTALLED_APPS = [
+    # ...
+    'debug_toolbar',
+]
+
+MIDDLEWARE = [
+    # ...
+    'debug_toolbar.middleware.DebugToolbarMiddleware',
+]
+
+INTERNAL_IPS = [
+    '127.0.0.1',
+]
+
+# urls.py
+if settings.DEBUG:
+    import debug_toolbar
+    urlpatterns = [
+        path('__debug__/', include(debug_toolbar.urls)),
+    ] + urlpatterns
+```
+
+## Padrões e Práticas Recomendadas
+
+### Estrutura de Projeto
+
+```
+projeto/
+├── apps/                  # Todas as aplicações do projeto
+│   ├── core/              # Funcionalidades centrais
+│   ├── users/             # Gerenciamento de usuários
+│   └── blog/              # Funcionalidades de blog
+├── config/                # Configurações do projeto
+│   ├── settings/
+│   │   ├── base.py        # Configurações base
+│   │   ├── local.py       # Configurações de desenvolvimento
+│   │   └── production.py  # Configurações de produção
+│   ├── urls.py
+│   └── wsgi.py
+├── static/                # Arquivos estáticos
+├── templates/             # Templates globais
+├── media/                 # Arquivos de mídia
+├── docs/                  # Documentação
+├── requirements/
+│   ├── base.txt           # Dependências base
+│   ├── local.txt          # Dependências de desenvolvimento
+│   └── production.txt     # Dependências de produção
+├── manage.py
+└── README.md
+```
+
+### Padrões de Código
+
+```python
+# Nomes de classes em CamelCase
+class MinhaClasse:
+    pass
+
+# Nomes de funções e variáveis em snake_case
+def minha_funcao():
+    minha_variavel = 10
+    return minha_variavel
+
+# Constantes em MAIÚSCULAS
+NUMERO_MAXIMO_DE_TENTATIVAS = 3
+
+# Docstrings para documentação
+def calcular_total(valores):
+    """
+    Calcula a soma de uma lista de valores.
+    
+    Args:
+        valores (list): Lista de números para somar.
+        
+    Returns:
+        float: A soma dos valores.
+        
+    Raises:
+        TypeError: Se valores não for uma lista ou se contiver elementos não numéricos.
+    """
+    return sum(valores)
+```
+
+### Fat Models, Thin Views
+
+```python
+# models.py - Lógica de negócio no modelo
+class Artigo(models.Model):
+    # ...
+    
+    def publicar(self):
+        self.status = 'publicado'
+        self.data_publicacao = timezone.now()
+        self.save()
+    
+    def despublicar(self):
+        self.status = 'rascunho'
+        self.save()
+    
+    def get_comentarios_aprovados(self):
+        return self.comentarios.filter(aprovado=True)
+    
+    def get_categorias_ordenadas(self):
+        return self.categorias.order_by('nome')
+
+# views.py - View simples que usa métodos do modelo
+def publicar_artigo(request, pk):
+    artigo = get_object_or_404(Artigo, pk=pk)
+    if request.user == artigo.autor:
+        artigo.publicar()
+    return redirect('artigo_detalhe', pk=artigo.pk)
+```
+
+### Service Layer
+
+```python
+# services.py
+class ArtigoService:
+    @staticmethod
+    def criar_artigo(titulo, conteudo, autor, categorias=None):
+        artigo = Artigo.objects.create(
+            titulo=titulo,
+            conteudo=conteudo,
+            autor=autor
+        )
+        
+        if categorias:
+            artigo.categorias.add(*categorias)
+        
+        # Enviar notificação, gerar log, etc.
+        
+        return artigo
+    
+    @staticmethod
+    def publicar_artigo(artigo_id, usuario):
+        artigo = Artigo.objects.get(id=artigo_id)
+        
+        if usuario != artigo.autor and not usuario.is_staff:
+            raise PermissionError("Usuário não tem permissão para publicar este artigo")
+        
+        artigo.publicar()
+        
+        # Enviar e-mail, notificar seguidores, etc.
+        
+        return artigo
+
+# views.py
+def criar_artigo(request):
+    if request.method == 'POST':
+        form = ArtigoForm(request.POST)
+        if form.is_valid():
+            try:
+                artigo = ArtigoService.criar_artigo(
+                    titulo=form.cleaned_data['titulo'],
+                    conteudo=form.cleaned_data['conteudo'],
+                    autor=request.user,
+                    categorias=form.cleaned_data['categorias']
+                )
+                return redirect('artigo_detalhe', pk=artigo.pk)
+            except Exception as e:
+                form.add_error(None, str(e))
+    else:
+        form = ArtigoForm()
+    return render(request, 'app/artigo_form.html', {'form': form})
+```
+
+### Signals para Desacoplamento
+
+```python
+# signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from .models import Artigo
+
+@receiver(post_save, sender=Artigo)
+def artigo_post_save(sender, instance, created, **kwargs):
+    if created:
+        # Lógica para novo artigo
+        pass
+    else:
+        # Lógica para artigo atualizado
+        pass
+
+# apps.py
+from django.apps import AppConfig
+
+class BlogConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'blog'
+    
+    def ready(self):
+        import blog.signals  # Importar signals quando a aplicação estiver pronta
+```
+
+### Mixins para Reutilização
+
+```python
+class OwnerRequiredMixin:
+    """Mixin que verifica se o usuário é dono do objeto."""
+    
+    def dispatch(self, request, *args, **kwargs):
+        obj = self.get_object()
+        if obj.autor != request.user:
+            return self.handle_no_permission()
+        return super().dispatch(request, *args, **kwargs)
+
+class ArtigoUpdateView(LoginRequiredMixin, OwnerRequiredMixin, UpdateView):
+    model = Artigo
+    fields = ['titulo', 'conteudo', 'categorias']
+    template_name = 'app/artigo_form.html'
+```
+
+### Gerenciamento de Configurações
+
+```python
+# settings/base.py
+import os
+from pathlib import Path
+from decouple import config, Csv
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+SECRET_KEY = config('SECRET_KEY')
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    
+    # Apps de terceiros
+    'rest_framework',
+    'crispy_forms',
+    
+    # Apps do projeto
+    'apps.core',
+    'apps.users',
+    'apps.blog',
+]
+
+# settings/local.py
+from .base import *
+
+DEBUG = True
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+# settings/production.py
+from .base import *
+
+DEBUG = False
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv())
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT', cast=int),
+    }
+}
+
+# Configurações de segurança
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+```
+
+## Recursos Adicionais
+
+### Documentação Oficial
+
+- [Documentação do Django](https://docs.djangoproject.com/)
+- [Tutorial do Django](https://docs.djangoproject.com/en/stable/intro/tutorial01/)
+- [Referência da API do Django](https://docs.djangoproject.com/en/stable/ref/)
+- [Tópicos Avançados do Django](https://docs.djangoproject.com/en/stable/topics/)
+
+### Livros Recomendados
+
+- "Django for Professionals" por William S. Vincent
+- "Two Scoops of Django" por Daniel Roy Greenfeld e Audrey Roy Greenfeld
+- "Django 3 By Example" por Antonio Melé
+- "Test-Driven Development with Python" por Harry Percival
+
+### Cursos Online
+
+- [Django for Everybody](https://www.dj4e.com/) por Charles Severance
+- [Django Web Framework - Full Course for Beginners](https://www.youtube.com/watch?v=F5mRW0jo-U4) por freeCodeCamp
+- [Django - The Complete Masterclass](https://www.udemy.com/course/django-the-complete-masterclass/) na Udemy
+- [Django for APIs](https://djangoforapis.com/) por William S. Vincent
+
+### Blogs e Sites
+
+- [Django News](https://django-news.com/)
+- [Django Stars Blog](https://djangostars.com/blog/)
+- [Real Python - Django Tutorials](https://realpython.com/tutorials/django/)
+- [Awesome Django](https://github.com/wsvincent/awesome-django) - Lista curada de recursos
+
+### Pacotes e Extensões Úteis
+
+- [Django REST Framework](https://www.django-rest-framework.org/) - Criação de APIs
+- [Django Crispy Forms](https://django-crispy-forms.readthedocs.io/) - Formulários elegantes
+- [Django Debug Toolbar](https://django-debug-toolbar.readthedocs.io/) - Depuração
+- [Django Allauth](https://django-allauth.readthedocs.io/) - Autenticação avançada
+- [Django Filter](https://django-filter.readthedocs.io/) - Filtragem de querysets
+- [Django Channels](https://channels.readthedocs.io/) - WebSockets e comunicação assíncrona
+- [Django Celery](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html) - Tarefas assíncronas
+- [Django Storages](https://django-storages.readthedocs.io/) - Armazenamento em nuvem
+
+### Comunidade
+
+- [Django Forum](https://forum.djangoproject.com/)
+- [Stack Overflow - Tag Django](https://stackoverflow.com/questions/tagged/django)
+- [Reddit r/django](https://www.reddit.com/r/django/)
+- [Discord Django Community](https://discord.com/invite/xcRH6mN4fa)
+- [Django Chat Podcast](https://djangochat.com/)
+
+### Conferências
+
+- [DjangoCon US](https://djangocon.us/)
+- [DjangoCon Europe](https://djangocon.eu/)
+- [DjangoCon Australia](https://djangocon.com.au/)
+- [PyCon (várias edições globais)](https://pycon.org/)
+
+### Contribuindo para o Django
+
+- [Contribuindo para o Django](https://docs.djangoproject.com/en/stable/internals/contributing/)
+- [Código de Conduta do Django](https://www.djangoproject.com/conduct/)
+- [Repositório do Django no GitHub](https://github.com/django/django)
+- [Django Software Foundation](https://www.djangoproject.com/foundation/)
