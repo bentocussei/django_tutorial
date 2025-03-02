@@ -280,6 +280,23 @@ nome_da_aplicacao/
 
 ### Trabalhando com Múltiplas Aplicações
 
+#### O que são Aplicações no Django?
+
+No contexto do Django, uma **aplicação** é um pacote Python que fornece alguma funcionalidade específica. Conceitualmente, uma aplicação Django deve seguir o princípio da responsabilidade única, ou seja, deve fazer uma coisa e fazê-la bem.
+
+As aplicações são os blocos de construção fundamentais de um projeto Django. Elas são:
+
+- **Modulares**: Podem ser reutilizadas em diferentes projetos
+- **Independentes**: Idealmente, devem funcionar de forma isolada
+- **Focadas**: Cada aplicação deve ter um propósito claro e específico
+- **Coesas**: Os componentes dentro de uma aplicação devem estar fortemente relacionados
+
+Exemplos de aplicações em um projeto típico:
+- `usuarios`: Gerenciamento de usuários, perfis e autenticação
+- `blog`: Funcionalidades de blog como posts, comentários e categorias
+- `loja`: Funcionalidades de e-commerce como produtos, carrinho e pedidos
+- `pagamentos`: Processamento de pagamentos e integrações com gateways
+
 Um projeto Django pode conter múltiplas aplicações, cada uma responsável por uma funcionalidade específica. Esta é uma das principais vantagens do Django: a modularidade.
 
 #### Registrando Aplicações
@@ -1063,6 +1080,469 @@ SESSION_COOKIE_SECURE = True  # Em produção
 CSRF_COOKIE_SECURE = True  # Em produção
 X_FRAME_OPTIONS = 'DENY'
 ```
+
+### Segurança no Django Seguindo o OWASP Top 10
+
+O OWASP Top 10 é uma lista dos riscos de segurança mais críticos para aplicações web. Vamos ver como o Django ajuda a mitigar cada um deles e quais práticas adicionais você deve adotar:
+
+#### 1. Quebra de Controle de Acesso
+
+**Proteções nativas do Django:**
+- Sistema de autenticação e autorização robusto
+- Decoradores como `@login_required` e `@permission_required`
+- Mixins como `LoginRequiredMixin` e `UserPassesTestMixin`
+
+**Práticas recomendadas:**
+```python
+# Verificação de propriedade em views baseadas em função
+def editar_artigo(request, pk):
+    artigo = get_object_or_404(Artigo, pk=pk)
+    if request.user != artigo.autor:
+        raise PermissionDenied
+    # ...
+
+# Verificação de propriedade em views baseadas em classe
+class ArtigoUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Artigo
+    fields = ['titulo', 'conteudo']
+    
+    def test_func(self):
+        artigo = self.get_object()
+        return self.request.user == artigo.autor
+
+# Usando permissões granulares
+from django.contrib.auth.decorators import permission_required
+
+@permission_required('blog.change_artigo')
+def editar_artigo(request, pk):
+    # ...
+```
+
+#### 2. Falhas Criptográficas
+
+**Proteções nativas do Django:**
+- Armazenamento seguro de senhas com algoritmos como PBKDF2, Argon2 ou Bcrypt
+- Geração segura de tokens para redefinição de senha
+
+**Práticas recomendadas:**
+```python
+# settings.py - Configurar algoritmo de hash de senha
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+]
+
+# Usar HTTPS em produção
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+# Para dados sensíveis, considere criptografia em nível de campo
+from django.db import models
+from django_cryptography.fields import encrypt
+
+class InformacaoPagamento(models.Model):
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE)
+    numero_cartao = encrypt(models.CharField(max_length=16))
+    cvv = encrypt(models.CharField(max_length=4))
+```
+
+#### 3. Injeção
+
+**Proteções nativas do Django:**
+- ORM que previne SQL Injection
+- Escapamento automático em templates que previne XSS
+
+**Práticas recomendadas:**
+```python
+# Evite usar raw SQL, mas se precisar, use parâmetros nomeados
+from django.db import connection
+
+def buscar_artigos(termo):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT * FROM blog_artigo WHERE titulo LIKE %s",
+            [f'%{termo}%']
+        )
+        return cursor.fetchall()
+
+# Para comandos do sistema, use subprocess com argumentos separados
+import subprocess
+
+def converter_arquivo(arquivo_entrada, arquivo_saida):
+    subprocess.run(
+        ['convert', arquivo_entrada, arquivo_saida],
+        check=True,
+        capture_output=True,
+        text=True
+    )
+```
+
+#### 4. Design Inseguro
+
+**Proteções nativas do Django:**
+- Configurações seguras por padrão
+- Documentação extensa sobre segurança
+
+**Práticas recomendadas:**
+- Realizar revisões de segurança regulares
+- Seguir o princípio do menor privilégio
+- Implementar defesa em profundidade (múltiplas camadas de segurança)
+- Usar ferramentas como `django-security` para verificações adicionais
+
+```python
+# Implementar limites de taxa para evitar abuso
+from django.core.cache import cache
+from django.http import HttpResponseTooManyRequests
+
+def view_com_limite_de_taxa(request):
+    client_ip = request.META.get('REMOTE_ADDR')
+    key = f'rate_limit_{client_ip}'
+    requests = cache.get(key, 0)
+    
+    if requests >= 100:  # Limite de 100 requisições por hora
+        return HttpResponseTooManyRequests()
+    
+    cache.set(key, requests + 1, 3600)  # 1 hora
+    # Lógica da view...
+```
+
+#### 5. Configuração Incorreta de Segurança
+
+**Proteções nativas do Django:**
+- Configurações seguras por padrão
+- Verificador de segurança integrado (`python manage.py check --deploy`)
+
+**Práticas recomendadas:**
+```python
+# settings.py para produção
+DEBUG = False
+ALLOWED_HOSTS = ['www.seudominio.com']
+
+# Usar variáveis de ambiente para configurações sensíveis
+import os
+from decouple import config, Csv
+
+SECRET_KEY = config('SECRET_KEY')
+DATABASE_PASSWORD = config('DATABASE_PASSWORD')
+
+# Configurar cabeçalhos de segurança
+SECURE_HSTS_SECONDS = 31536000  # 1 ano
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
+```
+
+#### 6. Componentes Vulneráveis e Desatualizados
+
+**Práticas recomendadas:**
+- Manter o Django e todas as dependências atualizadas
+- Usar ferramentas como `safety` ou `dependabot` para verificar vulnerabilidades
+
+```bash
+# Verificar vulnerabilidades nas dependências
+pip install safety
+safety check
+
+# Fixar versões específicas em requirements.txt
+Django==4.2.7
+djangorestframework==3.14.0
+```
+
+#### 7. Falhas de Identificação e Autenticação
+
+**Proteções nativas do Django:**
+- Sistema de autenticação robusto
+- Proteção contra ataques de força bruta
+
+**Práticas recomendadas:**
+```python
+# settings.py - Configurar políticas de senha
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 12}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+# Implementar autenticação de dois fatores
+# pip install django-two-factor-auth
+INSTALLED_APPS = [
+    # ...
+    'django_otp',
+    'django_otp.plugins.otp_totp',
+    'two_factor',
+]
+
+# Implementar bloqueio de conta após tentativas falhas
+from django.contrib.auth import get_user_model
+from django.contrib.auth.signals import user_login_failed
+from django.dispatch import receiver
+
+@receiver(user_login_failed)
+def login_failed(sender, credentials, **kwargs):
+    username = credentials.get('username')
+    if username:
+        cache_key = f'login_attempts_{username}'
+        attempts = cache.get(cache_key, 0) + 1
+        cache.set(cache_key, attempts, 300)  # 5 minutos
+        
+        if attempts >= 5:
+            User = get_user_model()
+            try:
+                user = User.objects.get(username=username)
+                user.is_active = False
+                user.save()
+            except User.DoesNotExist:
+                pass
+```
+
+#### 8. Falhas de Integridade de Software e Dados
+
+**Proteções nativas do Django:**
+- Validação de dados em formulários e modelos
+- Sistema de migrações para manter a integridade do banco de dados
+
+**Práticas recomendadas:**
+```python
+# Validação rigorosa em modelos
+class Artigo(models.Model):
+    titulo = models.CharField(max_length=200, validators=[
+        RegexValidator(r'^[a-zA-Z0-9\s\-_]+$', 'Apenas letras, números, espaços e hífens são permitidos.')
+    ])
+    # ...
+    
+    def clean(self):
+        if len(self.titulo) < 5:
+            raise ValidationError('O título deve ter pelo menos 5 caracteres.')
+        if self.data_publicacao and self.data_publicacao > timezone.now():
+            raise ValidationError('A data de publicação não pode ser no futuro.')
+
+# Usar transações para operações críticas
+from django.db import transaction
+
+@transaction.atomic
+def transferir_fundos(origem_id, destino_id, valor):
+    with transaction.atomic():
+        origem = Conta.objects.select_for_update().get(id=origem_id)
+        destino = Conta.objects.select_for_update().get(id=destino_id)
+        
+        if origem.saldo < valor:
+            raise ValueError("Saldo insuficiente")
+        
+        origem.saldo -= valor
+        destino.saldo += valor
+        
+        origem.save()
+        destino.save()
+        
+        Transacao.objects.create(
+            origem=origem,
+            destino=destino,
+            valor=valor
+        )
+```
+
+#### 9. Falhas de Registro e Monitoramento
+
+**Práticas recomendadas:**
+```python
+# settings.py - Configuração de logging
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'WARNING',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs/django.log',
+            'formatter': 'verbose',
+        },
+        'security': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs/security.log',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'django.security': {
+            'handlers': ['security'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'app.security': {
+            'handlers': ['security'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# Registrar eventos de segurança importantes
+import logging
+logger = logging.getLogger('app.security')
+
+def alterar_permissoes(request, user_id):
+    if not request.user.is_superuser:
+        logger.warning(
+            'Tentativa não autorizada de alterar permissões',
+            extra={
+                'user_id': request.user.id,
+                'target_user_id': user_id,
+                'ip': request.META.get('REMOTE_ADDR')
+            }
+        )
+        raise PermissionDenied
+    # ...
+```
+
+#### 10. Falsificação de Solicitação do Lado do Servidor (SSRF)
+
+**Práticas recomendadas:**
+```python
+import ipaddress
+from urllib.parse import urlparse
+from django.core.exceptions import ValidationError
+
+def validar_url(url):
+    parsed = urlparse(url)
+    
+    # Verificar se o esquema é permitido
+    if parsed.scheme not in ['http', 'https']:
+        raise ValidationError("Apenas URLs HTTP(S) são permitidas")
+    
+    # Verificar se o host não é um IP privado
+    try:
+        ip = ipaddress.ip_address(parsed.netloc)
+        if ip.is_private or ip.is_loopback or ip.is_reserved:
+            raise ValidationError("IPs privados ou de loopback não são permitidos")
+    except ValueError:
+        # Não é um IP, é um nome de domínio
+        pass
+    
+    # Lista de domínios permitidos
+    dominios_permitidos = ['api.exemplo.com', 'api.servico-seguro.com']
+    if parsed.netloc not in dominios_permitidos:
+        raise ValidationError("Domínio não permitido")
+    
+    return url
+
+def buscar_api_externa(request):
+    url = request.POST.get('api_url')
+    
+    try:
+        url_validada = validar_url(url)
+        # Fazer a requisição para a URL validada
+        # ...
+    except ValidationError as e:
+        logger.warning(
+            'Tentativa de SSRF bloqueada',
+            extra={
+                'user_id': request.user.id,
+                'url': url,
+                'ip': request.META.get('REMOTE_ADDR')
+            }
+        )
+        return HttpResponseBadRequest(str(e))
+```
+
+### Ferramentas de Segurança para Django
+
+1. **django-security**: Fornece verificações e melhorias de segurança adicionais
+2. **django-axes**: Proteção contra ataques de força bruta
+3. **django-csp**: Implementação de Content Security Policy
+4. **django-honeypot**: Campos de honeypot para formulários
+5. **django-defender**: Proteção contra ataques de força bruta baseada em cache
+6. **django-session-security**: Expiração de sessão por inatividade
+
+```bash
+# Instalação de ferramentas de segurança
+pip install django-security django-axes django-csp django-honeypot
+```
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    # ...
+    'security',
+    'axes',
+    'csp',
+    'honeypot',
+]
+
+MIDDLEWARE = [
+    # ...
+    'axes.middleware.AxesMiddleware',
+    'csp.middleware.CSPMiddleware',
+    'security.middleware.DoNotTrackMiddleware',
+    'security.middleware.ContentNoSniffMiddleware',
+    'security.middleware.XssProtectMiddleware',
+]
+
+# Configuração do django-axes
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # 1 hora
+AXES_LOCKOUT_TEMPLATE = 'seguranca/bloqueado.html'
+
+# Configuração do django-csp
+CSP_DEFAULT_SRC = ("'self'",)
+CSP_SCRIPT_SRC = ("'self'", 'cdn.exemplo.com')
+CSP_STYLE_SRC = ("'self'", 'cdn.exemplo.com')
+CSP_IMG_SRC = ("'self'", 'cdn.exemplo.com', 'data:')
+CSP_FONT_SRC = ("'self'", 'fonts.googleapis.com', 'fonts.gstatic.com')
+
+# Configuração do django-honeypot
+HONEYPOT_FIELD_NAME = 'email_confirm'
+HONEYPOT_VALUE = ''
+```
+
+### Checklist de Segurança para Projetos Django
+
+1. **Configurações Básicas**
+   - [ ] DEBUG = False em produção
+   - [ ] SECRET_KEY única e segura
+   - [ ] ALLOWED_HOSTS configurado corretamente
+   - [ ] Usar HTTPS em produção
+
+2. **Autenticação e Autorização**
+   - [ ] Políticas de senha fortes
+   - [ ] Autenticação de dois fatores (quando possível)
+   - [ ] Verificação adequada de permissões em todas as views
+   - [ ] Proteção contra ataques de força bruta
+
+3. **Proteção de Dados**
+   - [ ] Validação rigorosa de entrada de dados
+   - [ ] Sanitização de saída de dados
+   - [ ] Criptografia para dados sensíveis
+   - [ ] Uso de transações para operações críticas
+
+4. **Proteção contra Ataques Comuns**
+   - [ ] Proteção CSRF em todos os formulários
+   - [ ] Proteção contra XSS
+   - [ ] Proteção contra SSRF
+   - [ ] Proteção contra clickjacking (X-Frame-Options)
+
+5. **Monitoramento e Resposta**
+   - [ ] Logging adequado de eventos de segurança
+   - [ ] Monitoramento de atividades suspeitas
+   - [ ] Plano de resposta a incidentes
+   - [ ] Backups regulares e testados
+
+6. **Manutenção**
+   - [ ] Django e dependências atualizadas
+   - [ ] Verificação regular de vulnerabilidades
+   - [ ] Testes de segurança periódicos
+   - [ ] Revisão de código com foco em segurança
 
 ## Testes no Django
 
