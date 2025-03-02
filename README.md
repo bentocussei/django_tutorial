@@ -567,7 +567,9 @@ graph LR
 
 ### Definição de Modelos
 
-Os modelos definem a estrutura dos dados:
+Os modelos no Django são classes Python que definem a estrutura dos dados da aplicação. Cada modelo representa uma tabela no banco de dados, e cada atributo do modelo representa um campo na tabela. O ORM (Object-Relational Mapping) do Django traduz automaticamente os modelos em tabelas no banco de dados, facilitando o trabalho com dados sem precisar escrever SQL diretamente.
+
+Os modelos são definidos no arquivo `models.py` de cada aplicação e herdam da classe `models.Model`. Cada campo do modelo é representado por uma instância de uma classe Field (CharField, TextField, IntegerField, etc.), que define o tipo de dado e as restrições associadas.
 
 ```python
 from django.db import models
@@ -594,7 +596,94 @@ class Artigo(models.Model):
 
 ### Relações entre Modelos
 
-Django suporta diferentes tipos de relações:
+O Django oferece várias maneiras de estabelecer relações entre modelos, simulando as relações de banco de dados relacionais. Essas relações podem ser definidas entre modelos da mesma aplicação ou entre modelos de aplicações diferentes.
+
+#### Relacionamentos entre Modelos de Diferentes Aplicações
+
+Uma das grandes vantagens da arquitetura de aplicações do Django é a capacidade de relacionar modelos entre diferentes aplicações. Isso permite uma organização modular do código, mantendo a coesão das aplicações enquanto permite a interação entre elas.
+
+Para relacionar modelos de diferentes aplicações, basta importar o modelo da outra aplicação e estabelecer a relação normalmente:
+
+```python
+# app_pedidos/models.py
+from django.db import models
+from app_produtos.models import Produto  # Importando modelo de outra aplicação
+from app_usuarios.models import Cliente  # Importando modelo de outra aplicação
+
+class Pedido(models.Model):
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE)
+    data_pedido = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=[
+        ('pendente', 'Pendente'),
+        ('pago', 'Pago'),
+        ('enviado', 'Enviado'),
+        ('entregue', 'Entregue')
+    ])
+    
+    def __str__(self):
+        return f"Pedido #{self.id} - {self.cliente.nome}"
+
+class ItemPedido(models.Model):
+    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='itens')
+    produto = models.ForeignKey(Produto, on_delete=models.CASCADE)  # Relação com modelo de outra aplicação
+    quantidade = models.PositiveIntegerField(default=1)
+    preco_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    def __str__(self):
+        return f"{self.quantidade}x {self.produto.nome} em {self.pedido}"
+```
+
+Essas relações entre aplicações permitem manter a separação de responsabilidades enquanto estabelece as conexões necessárias entre os diferentes componentes do sistema.
+
+```mermaid
+classDiagram
+    class Cliente {
+        +nome
+        +email
+        +telefone
+    }
+    
+    class Produto {
+        +nome
+        +descricao
+        +preco
+        +estoque
+    }
+    
+    class Pedido {
+        +cliente
+        +data_pedido
+        +status
+    }
+    
+    class ItemPedido {
+        +pedido
+        +produto
+        +quantidade
+        +preco_unitario
+    }
+    
+    Cliente "1" -- "n" Pedido: faz
+    Pedido "1" -- "n" ItemPedido: contém
+    Produto "1" -- "n" ItemPedido: incluído em
+    
+    note for Cliente "app_usuarios"
+    note for Produto "app_produtos"
+    note for Pedido "app_pedidos"
+    note for ItemPedido "app_pedidos"
+```
+
+O Django cuida automaticamente dos detalhes de implementação dessas relações no banco de dados, criando as chaves estrangeiras necessárias e mantendo a integridade referencial.
+
+```mermaid
+graph LR
+    A[Definição dos Modelos] --> B[Criação das Migrações]
+    B --> C[Aplicação das Migrações]
+    C --> D[Tabelas no Banco de Dados]
+    D --> E[ORM para Manipulação dos Dados]
+```
+
+O Django suporta diferentes tipos de relações:
 
 ```mermaid
 classDiagram
@@ -638,7 +727,7 @@ python manage.py migrate
 # Ver status das migrações
 python manage.py showmigrations
 ```
-
+ 
 ### QuerySet API
 
 A API QuerySet permite interagir com o banco de dados:
@@ -674,7 +763,7 @@ artigo.save()
 artigo.delete()
 ```
 
-## Visões e Templates
+## Views e Templates
 
 ### Tipos de Views
 
@@ -751,124 +840,504 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 ## Django Admin
 
-### Configuração Básica
+### O que é o Django Admin?
+
+O Django Admin é uma das funcionalidades mais poderosas e destacadas do Django, oferecendo uma interface de administração web automática e sofisticada. Essa interface administrativa é gerada dinamicamente com base nos modelos definidos, exigindo pouco ou nenhum código adicional para começar a usar.
+
+Em sua essência, o Django Admin é:
+
+1. **Uma interface CRUD completa**: Permite Criar, Ler, Atualizar e Deletar (CRUD) registros do banco de dados
+2. **Gerada automaticamente**: Cria formulários e listas baseados nos modelos e seus campos
+3. **Altamente customizável**: Pode ser adaptada para atender necessidades específicas
+4. **Orientada a usuários administrativos**: Destinada principalmente para uso interno por administradores do sistema
+5. **Segura**: Inclui sistema de autenticação e registro de ações
+
+```mermaid
+graph LR
+    A[Modelos Django] --> B[Registro no Admin]
+    B --> C[Interface Administrativa]
+    C --> D{Operações}
+    D --> E[Listar registros]
+    D --> F[Adicionar registros]
+    D --> G[Editar registros]
+    D --> H[Excluir registros]
+    D --> I[Ações em massa]
+    D --> J[Filtrar e buscar]
+```
+
+### Funcionalidades Principais
+
+O Django Admin oferece um conjunto abrangente de funcionalidades para gerenciar dados:
+
+- **Listagem de registros**: Exibe os registros em formato tabular com paginação
+- **Filtragem e busca**: Permite filtrar e buscar registros por diferentes critérios
+- **Formulários de edição**: Cria automaticamente formulários para criação e edição de registros
+- **Validação de dados**: Aplica as mesmas regras de validação definidas nos modelos
+- **Histórico de alterações**: Mantém um registro de quem alterou o quê e quando
+- **Ações em massa**: Permite executar operações em múltiplos registros simultaneamente
+- **Controle de permissões**: Restringe o acesso com base em permissões granulares
+
+### Estrutura e Fluxo de Uso
+
+```mermaid
+sequenceDiagram
+    participant Administrador
+    participant Interface Admin
+    participant ModelAdmin
+    participant Modelo
+    participant Banco de Dados
+    
+    Administrador->>Interface Admin: Acessa Django Admin
+    Interface Admin->>Administrador: Solicita autenticação
+    Administrador->>Interface Admin: Fornece credenciais
+    Interface Admin->>Administrador: Exibe página inicial do Admin
+    
+    Administrador->>Interface Admin: Seleciona modelo para administrar
+    Interface Admin->>ModelAdmin: Solicita listagem
+    ModelAdmin->>Modelo: Busca registros
+    Modelo->>Banco de Dados: Executa consulta
+    Banco de Dados->>Modelo: Retorna dados
+    Modelo->>ModelAdmin: Fornece registros
+    ModelAdmin->>Interface Admin: Formata para exibição
+    Interface Admin->>Administrador: Exibe lista de registros
+    
+    Administrador->>Interface Admin: Seleciona registro ou ação
+    alt Visualizar/Editar registro
+        Interface Admin->>ModelAdmin: Solicita formulário
+        ModelAdmin->>Modelo: Busca registro específico
+        Modelo->>ModelAdmin: Retorna dados do registro
+        ModelAdmin->>Interface Admin: Gera formulário
+        Interface Admin->>Administrador: Exibe formulário
+    else Excluir registro
+        Interface Admin->>ModelAdmin: Confirma exclusão
+        ModelAdmin->>Modelo: Solicita exclusão
+        Modelo->>Banco de Dados: Remove registro
+    else Ação em massa
+        Interface Admin->>ModelAdmin: Executa ação em vários registros
+        ModelAdmin->>Modelo: Processa ação
+        Modelo->>Banco de Dados: Atualiza dados
+    end
+```
+
+### Configuração e Uso Básico
+
+O Django Admin já vem habilitado por padrão em novos projetos Django. Para utilizá-lo:
+
+1. Garanta que as aplicações `django.contrib.admin` e suas dependências estejam em `INSTALLED_APPS`
+2. Execute as migrações (`python manage.py migrate`)
+3. Crie um superusuário (`python manage.py createsuperuser`)
+4. Registre seus modelos no admin
 
 ```python
 # admin.py
 from django.contrib import admin
-from .models import Categoria, Artigo
+from .models import Artigo, Categoria
 
-admin.site.register(Categoria)
 admin.site.register(Artigo)
+admin.site.register(Categoria)
 ```
 
-### Personalização do Admin
+### Personalização Básica
 
 ```python
+# admin.py
+from django.contrib import admin
+from .models import Artigo, Categoria
+
+@admin.register(Categoria)
+class CategoriaAdmin(admin.ModelAdmin):
+    list_display = ['nome', 'descricao']
+    search_fields = ['nome']
+
 @admin.register(Artigo)
 class ArtigoAdmin(admin.ModelAdmin):
-    list_display = ('titulo', 'autor', 'data_publicacao', 'ativo')
-    list_filter = ('ativo', 'data_publicacao', 'categorias')
-    search_fields = ('titulo', 'conteudo')
+    list_display = ['titulo', 'autor', 'data_publicacao', 'ativo']
+    list_filter = ['ativo', 'categorias', 'data_publicacao']
+    search_fields = ['titulo', 'conteudo']
     date_hierarchy = 'data_publicacao'
-    filter_horizontal = ('categorias',)
-    readonly_fields = ('data_publicacao',)
-    fieldsets = (
-        ('Informações Básicas', {
-            'fields': ('titulo', 'conteudo')
-        }),
-        ('Metadados', {
-            'fields': ('autor', 'categorias', 'data_publicacao', 'ativo')
-        }),
-    )
+    filter_horizontal = ['categorias']
+    prepopulated_fields = {'slug': ('titulo',)}
+    
+    fieldsets = [
+        (None, {'fields': ['titulo', 'slug', 'conteudo']}),
+        ('Categorização', {'fields': ['categorias'], 'classes': ['collapse']}),
+        ('Status', {'fields': ['ativo', 'data_publicacao']})
+    ]
+    
+    def save_model(self, request, obj, form, change):
+        if not change:  # Se é uma nova instância
+            obj.autor = request.user
+        super().save_model(request, obj, form, change)
 ```
+
+### Opções de Personalização do ModelAdmin
+
+- **list_display**: Campos a serem exibidos na listagem
+- **list_filter**: Campos a serem usados como filtros
+- **search_fields**: Campos incluídos na busca
+- **date_hierarchy**: Campo de data para navegação hierárquica
+- **prepopulated_fields**: Campos preenchidos automaticamente
+- **list_editable**: Campos editáveis diretamente na listagem
+- **list_display_links**: Campos que serão links para edição
+- **list_per_page**: Número de itens por página
+- **ordering**: Ordenação padrão dos itens
+- **readonly_fields**: Campos somente leitura no formulário
+- **fields**: Define quais campos mostrar e em qual ordem
+- **fieldsets**: Agrupa campos em seções
+- **filter_horizontal/filter_vertical**: Melhora a interface para campos ManyToMany
+- **raw_id_fields**: Usa campos de ID em vez de dropdowns para ForeignKey com muitos itens
 
 ### Ações Personalizadas
 
+Para operações em massa, você pode definir ações personalizadas:
+
 ```python
 @admin.register(Artigo)
 class ArtigoAdmin(admin.ModelAdmin):
-    # ...
-    actions = ['marcar_como_ativo', 'marcar_como_inativo']
+    # ... outras configurações ...
+    actions = ['publicar_artigos', 'despublicar_artigos']
     
-    def marcar_como_ativo(self, request, queryset):
+    def publicar_artigos(self, request, queryset):
         queryset.update(ativo=True)
-    marcar_como_ativo.short_description = "Marcar artigos selecionados como ativos"
+        self.message_user(request, f'{queryset.count()} artigos foram publicados')
+    publicar_artigos.short_description = 'Publicar artigos selecionados'
     
-    def marcar_como_inativo(self, request, queryset):
+    def despublicar_artigos(self, request, queryset):
         queryset.update(ativo=False)
-    marcar_como_inativo.short_description = "Marcar artigos selecionados como inativos"
+        self.message_user(request, f'{queryset.count()} artigos foram despublicados')
+    despublicar_artigos.short_description = 'Despublicar artigos selecionados'
+```
+
+### Customização Avançada
+
+Além de personalizar como os modelos são exibidos, você pode customizar a própria interface do admin:
+
+```python
+# Personalizar cabeçalhos e títulos
+admin.site.site_header = 'Administração do Blog'
+admin.site.site_title = 'Painel Admin'
+admin.site.index_title = 'Bem-vindo ao Painel de Controle'
+
+# Template personalizado para o admin
+# No arquivo admin.py
+class MeuModeloAdmin(admin.ModelAdmin):
+    change_form_template = 'admin/meu_modelo_change_form.html'
+    
+# Em templates/admin/meu_modelo_change_form.html
+{% extends "admin/change_form.html" %}
+{% block content %}
+    <p>Este é um texto de ajuda personalizado para este formulário.</p>
+    {{ block.super }}
+{% endblock %}
 ```
 
 ## Formulários
 
-### Formulários do Django
+### Conceito e Importância dos Formulários
+
+Os formulários são uma parte essencial de qualquer aplicação web, sendo o principal meio pelo qual os usuários interagem e enviam dados para o servidor. No Django, os formulários são objetos Python que:
+
+1. Definem a estrutura e os tipos de dados de cada campo
+2. Geram automaticamente HTML para renderização dos campos
+3. Validam os dados enviados pelos usuários
+4. Convertem os dados brutos em tipos Python apropriados
+
+O uso de formulários do Django tem várias vantagens:
+
+- **Segurança**: Proteção automática contra vulnerabilidades comuns
+- **Validação**: Verificação da integridade e formato dos dados
+- **Reutilização**: Formulários podem ser compartilhados entre diferentes views
+- **Consistência**: Garantia de que os dados salvos estão no formato correto
+- **Redução de código**: Menor necessidade de código repetitivo
+
+```mermaid
+graph TD
+    A[Definição do Formulário] --> B[Renderização HTML]
+    A --> C[Recebimento de Dados]
+    C --> D[Validação]
+    D --> E{Dados Válidos?}
+    E -->|Sim| F[Processamento dos Dados]
+    E -->|Não| G[Exibição de Erros]
+    G --> B
+```
+
+### Tipos de Formulários
+
+O Django oferece três abordagens principais para trabalhar com formulários:
+
+1. **Form**: Formulário manual, sem relação direta com modelos
+   - Flexível e personalizado
+   - Ideal para formulários que não representam um modelo específico
+   - Requer mais código para salvar os dados manualmente
+
+2. **ModelForm**: Formulário baseado em um modelo
+   - Gerado automaticamente a partir de um modelo
+   - Oferece validação consistente com as restrições do modelo
+   - Método `save()` para persistir os dados diretamente
+
+3. **Formulários em views genéricas**:
+   - Integração automática entre modelos, formulários e templates
+   - Menos código para operações CRUD comuns
+   - Facilidade de personalização por meio de métodos específicos
+
+Exemplos desses três tipos de formulários:
 
 ```python
-# forms.py
+# 1. Form (Formulário manual)
 from django import forms
+
+class ContatoForm(forms.Form):
+    nome = forms.CharField(max_length=100)
+    email = forms.EmailField()
+    mensagem = forms.CharField(widget=forms.Textarea)
+    
+    def clean_email(self):
+        email = self.cleaned_data.get('email')
+        if not email.endswith('@exemplo.com'):
+            raise forms.ValidationError('O email deve ser do domínio exemplo.com')
+        return email
+
+# 2. ModelForm (Formulário baseado em modelo)
+from django.forms import ModelForm
 from .models import Artigo
 
-class ArtigoForm(forms.ModelForm):
+class ArtigoForm(ModelForm):
     class Meta:
         model = Artigo
         fields = ['titulo', 'conteudo', 'categorias']
         widgets = {
-            'titulo': forms.TextInput(attrs={'class': 'form-control'}),
-            'conteudo': forms.Textarea(attrs={'class': 'form-control'}),
-            'categorias': forms.CheckboxSelectMultiple(),
+            'conteudo': forms.Textarea(attrs={'class': 'editor'})
         }
         
-# views.py
+    def clean_titulo(self):
+        titulo = self.cleaned_data.get('titulo')
+        if len(titulo) < 5:
+            raise forms.ValidationError('O título deve ter pelo menos 5 caracteres')
+        return titulo
+
+# 3. Formulário em view genérica
+from django.views.generic.edit import CreateView
+from .models import Artigo
+
+class ArtigoCreateView(CreateView):
+    model = Artigo
+    fields = ['titulo', 'conteudo', 'categorias']
+    template_name = 'artigo_form.html'
+    success_url = '/artigos/'
+    
+    def form_valid(self, form):
+        form.instance.autor = self.request.user
+        return super().form_valid(form)
+```
+
+### Ciclo de Vida de um Formulário
+
+O processamento de um formulário no Django segue um fluxo definido:
+
+```mermaid
+sequenceDiagram
+    participant Usuário
+    participant View
+    participant Formulário
+    participant Modelo
+    
+    Usuário->>View: Acessa a página (GET)
+    View->>Formulário: Instancia formulário vazio
+    Formulário->>View: Retorna HTML
+    View->>Usuário: Exibe formulário
+    
+    Usuário->>View: Envia dados (POST)
+    View->>Formulário: Instancia com dados (request.POST)
+    Formulário->>Formulário: Valida dados
+    
+    alt Dados válidos
+        Formulário->>Modelo: Salva dados (em ModelForm)
+        Modelo->>View: Confirma salvamento
+        View->>Usuário: Redireciona para página de sucesso
+    else Dados inválidos
+        Formulário->>View: Retorna erros
+        View->>Usuário: Exibe formulário com erros
+    end
+```
+
+Código de view que demonstra o ciclo completo:
+
+```python
 def criar_artigo(request):
     if request.method == 'POST':
+        # Formulário enviado: processa os dados
         form = ArtigoForm(request.POST)
         if form.is_valid():
+            # Dados válidos: salva e redireciona
             artigo = form.save(commit=False)
             artigo.autor = request.user
             artigo.save()
-            form.save_m2m()  # Salvar relações muitos-para-muitos
-            return redirect('artigo_detalhe', pk=artigo.pk)
+            form.save_m2m()  # Salva relações ManyToMany
+            messages.success(request, 'Artigo criado com sucesso!')
+            return redirect('lista_artigos')
     else:
+        # Requisição GET: mostra formulário vazio
         form = ArtigoForm()
-    return render(request, 'app/artigo_form.html', {'form': form})
+    
+    # Renderiza o template com o formulário (novo ou com erros)
+    return render(request, 'criar_artigo.html', {'form': form})
+```
+
+### Renderização de Formulários em Templates
+
+Os formulários podem ser renderizados de várias maneiras nos templates:
+
+```html
+<!-- Método 1: Renderização automática como tabela -->
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_table }}
+    <button type="submit">Enviar</button>
+</form>
+
+<!-- Método 2: Renderização automática como parágrafos -->
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Enviar</button>
+</form>
+
+<!-- Método 3: Renderização automática como lista -->
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_ul }}
+    <button type="submit">Enviar</button>
+</form>
+
+<!-- Método 4: Renderização manual (mais controle) -->
+<form method="post">
+    {% csrf_token %}
+    
+    <div class="form-group">
+        {{ form.titulo.errors }}
+        <label for="{{ form.titulo.id_for_label }}">Título:</label>
+        {{ form.titulo }}
+    </div>
+    
+    <div class="form-group">
+        {{ form.conteudo.errors }}
+        <label for="{{ form.conteudo.id_for_label }}">Conteúdo:</label>
+        {{ form.conteudo }}
+    </div>
+    
+    <div class="form-group">
+        {{ form.categorias.errors }}
+        <label for="{{ form.categorias.id_for_label }}">Categorias:</label>
+        {{ form.categorias }}
+    </div>
+    
+    <button type="submit">Salvar Artigo</button>
+</form>
 ```
 
 ### Validação de Formulários
 
+A validação é um aspecto crucial dos formulários no Django:
+
+1. **Validação automática**: Baseada nos tipos de campo e restrições do modelo
+2. **Validação por campo**: Métodos `clean_<nome_do_campo>`
+3. **Validação global**: Método `clean` para validações que envolvem múltiplos campos
+
 ```python
-class ArtigoForm(forms.ModelForm):
-    # ...
+class RegistroForm(forms.Form):
+    username = forms.CharField(max_length=30)
+    email = forms.EmailField()
+    senha = forms.CharField(widget=forms.PasswordInput)
+    confirmar_senha = forms.CharField(widget=forms.PasswordInput)
     
-    def clean_titulo(self):
-        titulo = self.cleaned_data['titulo']
-        if len(titulo) < 5:
-            raise forms.ValidationError("O título deve ter pelo menos 5 caracteres.")
-        return titulo
+    # Validação por campo
+    def clean_username(self):
+        username = self.cleaned_data.get('username')
+        if User.objects.filter(username=username).exists():
+            raise forms.ValidationError('Este nome de usuário já está em uso.')
+        return username
     
+    # Validação global (múltiplos campos)
     def clean(self):
         cleaned_data = super().clean()
-        titulo = cleaned_data.get('titulo')
-        conteudo = cleaned_data.get('conteudo')
+        senha = cleaned_data.get('senha')
+        confirmar_senha = cleaned_data.get('confirmar_senha')
         
-        if titulo and conteudo and titulo in conteudo:
-            raise forms.ValidationError("O título não deve estar contido no conteúdo.")
+        if senha and confirmar_senha and senha != confirmar_senha:
+            raise forms.ValidationError('As senhas não conferem.')
         
         return cleaned_data
 ```
 
-### Formulários de Criação de Usuário
+### Formulários com Arquivos
+
+Para trabalhar com upload de arquivos, é necessário definir o tipo de campo apropriado e configurar corretamente o formulário:
 
 ```python
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.models import User
+# Modelo
+class Documento(models.Model):
+    titulo = models.CharField(max_length=100)
+    arquivo = models.FileField(upload_to='documentos/')
+    data_upload = models.DateTimeField(auto_now_add=True)
 
-class RegistroForm(UserCreationForm):
-    email = forms.EmailField(max_length=254, required=True)
-    
+# Formulário
+class DocumentoForm(forms.ModelForm):
     class Meta:
-        model = User
-        fields = ('username', 'email', 'password1', 'password2')
+        model = Documento
+        fields = ['titulo', 'arquivo']
+
+# View
+def upload_documento(request):
+    if request.method == 'POST':
+        form = DocumentoForm(request.POST, request.FILES)
+        if form.is_valid():
+            form.save()
+            return redirect('lista_documentos')
+    else:
+        form = DocumentoForm()
+    return render(request, 'upload_documento.html', {'form': form})
+
+# Template
+'''
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Upload</button>
+</form>
+'''
+```
+
+### FormSets
+
+FormSets permitem trabalhar com múltiplas instâncias do mesmo formulário na mesma página:
+
+```python
+from django.forms import formset_factory, modelformset_factory
+
+# Criando um formset básico
+ComentarioFormSet = formset_factory(ComentarioForm, extra=3)
+
+# View com formset
+def adicionar_comentarios(request, artigo_id):
+    artigo = get_object_or_404(Artigo, id=artigo_id)
+    
+    if request.method == 'POST':
+        formset = ComentarioFormSet(request.POST)
+        if formset.is_valid():
+            for form in formset:
+                if form.cleaned_data:  # Verifica se o formulário não está vazio
+                    comentario = form.save(commit=False)
+                    comentario.artigo = artigo
+                    comentario.autor = request.user
+                    comentario.save()
+            return redirect('detalhe_artigo', artigo_id=artigo.id)
+    else:
+        formset = ComentarioFormSet()
+    
+    return render(request, 'adicionar_comentarios.html', {
+        'artigo': artigo,
+        'formset': formset
+    })
 ```
 
 ## Autenticação e Autorização
@@ -2245,3 +2714,148 @@ CSRF_COOKIE_SECURE = True
 - [Código de Conduta do Django](https://www.djangoproject.com/conduct/)
 - [Repositório do Django no GitHub](https://github.com/django/django)
 - [Django Software Foundation](https://www.djangoproject.com/foundation/)
+
+## Views e Templates
+
+### Conceito e Função das Views
+
+As Views são o componente do padrão MVT (Model-View-Template) responsável por processar as requisições HTTP e retornar respostas adequadas. Em essência, uma View é uma função ou classe Python que recebe uma requisição web e retorna uma resposta web, geralmente renderizando um template HTML com dados contextuais.
+
+As Views atuam como o "controlador" da aplicação, orquestrando o fluxo de dados entre o modelo e o template:
+
+1. Recebem requisições do cliente
+2. Interagem com os modelos para buscar ou manipular dados
+3. Processam os dados conforme necessário
+4. Passam os dados para os templates
+5. Retornam a resposta final ao cliente
+
+```mermaid
+sequenceDiagram
+    Usuário->>+URL Dispatcher: Requisição HTTP
+    URL Dispatcher->>+View: Roteia para a View apropriada
+    View->>+Model: Solicita dados
+    Model-->>-View: Retorna dados
+    View->>+Template: Passa contexto (dados)
+    Template-->>-View: Retorna HTML renderizado
+    View-->>-URL Dispatcher: Prepara resposta
+    URL Dispatcher-->>-Usuário: Envia resposta HTTP
+```
+
+### Tipos de Views
+
+Django suporta dois tipos principais de views:
+
+1. **Views Baseadas em Função (FBV)**:
+   - São funções Python que recebem pelo menos um argumento, a requisição (`request`)
+   - São simples e diretas, fáceis de entender
+   - Oferecem mais flexibilidade para lógica complexa ou não-convencional
+   - Requerem mais código para implementar funcionalidades padrão
+   - Ideais para views com lógica específica e única
+
+2. **Views Baseadas em Classe (CBV)**:
+   - São classes Python que herdam de `View` ou de outras views genéricas
+   - Organizam o código por método HTTP (get, post, etc.)
+   - Promovem reutilização de código através de herança e mixins
+   - Reduzem código repetitivo para padrões comuns (listar, detalhar, criar, etc.)
+   - Oferecem views genéricas para operações CRUD comuns
+   - Ideais para funcionalidades padrão como listar, detalhar, criar, atualizar e excluir registros
+
+```mermaid
+graph TB
+    A[Views] --> B[Views Baseadas em Função]
+    A --> C[Views Baseadas em Classe]
+    C --> D[Views Genéricas]
+    D --> E[ListView]
+    D --> F[DetailView]
+    D --> G[CreateView]
+    D --> H[UpdateView]
+    D --> I[DeleteView]
+    D --> J[FormView]
+    D --> K[Outras...]
+```
+
+```python
+# Views baseadas em função (FBV)
+from django.shortcuts import render, get_object_or_404
+from .models import Artigo
+
+def lista_artigos(request):
+    artigos = Artigo.objects.filter(ativo=True).order_by('-data_publicacao')
+    return render(request, 'blog/lista_artigos.html', {'artigos': artigos})
+
+def detalhe_artigo(request, artigo_id):
+    artigo = get_object_or_404(Artigo, id=artigo_id, ativo=True)
+    return render(request, 'blog/detalhe_artigo.html', {'artigo': artigo})
+
+# Views baseadas em classe genéricas
+from django.views.generic import (
+    ListView, DetailView, CreateView, UpdateView, DeleteView
+)
+
+class ArtigoListView(ListView):
+    model = Artigo
+    template_name = 'app/artigo_list.html'
+    context_object_name = 'artigos'
+    paginate_by = 10
+    
+class ArtigoDetailView(DetailView):
+    model = Artigo
+    template_name = 'app/artigo_detail.html'
+    
+class ArtigoCreateView(CreateView):
+    model = Artigo
+    fields = ['titulo', 'conteudo', 'categorias']
+    success_url = '/artigos/'
+```
+
+### Sistema de Templates
+
+O sistema de templates do Django é uma poderosa ferramenta para criar páginas dinâmicas. Um template é um arquivo de texto que define a estrutura ou layout de um arquivo (como HTML), com marcadores especiais que descrevem como os dados dinâmicos devem ser inseridos.
+
+Os objetivos principais do sistema de templates são:
+1. Separar a lógica de apresentação da lógica de negócios
+2. Permitir a reutilização de elementos de interface
+3. Facilitar a manutenção e organização do código HTML
+4. Oferecer uma sintaxe intuitiva para adicionar dinamismo às páginas
+
+O sistema de templates do Django consiste em três componentes principais:
+
+1. **Tags de Template**: Controlam a lógica do template (condicionais, loops, etc.)
+   - `{% if %}`, `{% for %}`, `{% block %}`
+   - `{% url %}`, `{% include %}`
+   - `{% load %}`
+
+2. **Filtros**: Modificam variáveis para exibição
+   - `{{ valor|lower }}` (converte para minúsculas)
+   - `{{ texto|truncatewords:50 }}` (limita a 50 palavras)
+   - `{{ lista|length }}` (retorna o tamanho da lista)
+
+3. **Sistema de Herança de Templates**: Permite definir um template base e estendê-lo em outros templates
+   - Template base define blocos (`{% block %}`)
+   - Templates filhos substituem ou complementam esses blocos
+
+```mermaid
+graph TD
+    A[Template Base] -->|estende| B[Template Específico]
+    A -->|estende| C[Outro Template]
+    B -->|inclui| D[Componente Reutilizável]
+    C -->|inclui| D
+    E[View] -->|renderiza| B
+    E -->|renderiza| C
+```
+
+Exemplo de hierarquia de templates:
+
+```
+templates/
+├── base.html               # Template base com estrutura geral
+├── components/
+│   ├── navbar.html         # Componente da barra de navegação
+│   └── footer.html         # Componente do rodapé
+├── blog/
+│   ├── lista_artigos.html  # Estende base.html
+│   └── detalhe_artigo.html # Estende base.html
+└── users/
+    ├── login.html          # Estende base.html
+    └── profile.html        # Estende base.html
+```
